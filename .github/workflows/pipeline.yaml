@@ -1,4 +1,4 @@
-name: Java CI/CD Pipeline (Multi-Job)
+name: Java CI/CD Pipeline (Matrix + Multi-Job)
 
 on:
   push:
@@ -7,30 +7,37 @@ on:
 
 jobs:
 
-  # ===========================
-  # JOB 1 — UNIT TESTS
-  # ===========================
+  # ===================================================
+  # JOB 1 — MATRIX TEST JOB (Ubuntu + Windows, Java 17/21)
+  # ===================================================
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        java: [17, 21]
+
+    runs-on: ${{ matrix.os }}
+
+    name: Test on OS=${{ matrix.os }} | Java=${{ matrix.java }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: ${{ matrix.java }}
 
-      - name: Run unit tests
+      - name: Run Maven Tests
         run: mvn test --batch-mode
 
 
-
-  # ===========================
-  # JOB 2 — BUILD DOCKER IMAGE
-  # ===========================
+  # ===================================================
+  # JOB 2 — DOCKER BUILD (Only after ALL matrix tests pass)
+  # ===================================================
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -55,10 +62,9 @@ jobs:
           path: myapp.tar
 
 
-
-  # ===========================
-  # JOB 3 — PUSH IMAGES
-  # ===========================
+  # ===================================================
+  # JOB 3 — PUSH IMAGES (DockerHub + GHCR)
+  # ===================================================
   push:
     needs: build
     runs-on: ubuntu-latest
@@ -67,7 +73,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Download built image
+      # Download artifact
       - name: Download image artifact
         uses: actions/download-artifact@v4
         with:
@@ -114,12 +120,10 @@ jobs:
           SHA=${{ steps.vars.outputs.sha_tag }}
           DATE=${{ steps.vars.outputs.date_tag }}
 
-          # Tag images
           docker tag myapp:latest ${{ secrets.DOCKERHUB_USERNAME }}/java-app:latest
           docker tag myapp:latest ${{ secrets.DOCKERHUB_USERNAME }}/java-app:$SHA
           docker tag myapp:latest ${{ secrets.DOCKERHUB_USERNAME }}/java-app:$DATE
 
-          # Push images
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/java-app:latest
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/java-app:$SHA
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/java-app:$DATE
